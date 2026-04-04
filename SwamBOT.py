@@ -10,6 +10,7 @@ class Swambot:
     def __init__(self):
         self.maxQuoteLength = 1000
         self.tooLongQuotePage = 'Użytkownik:SwamBOT/Zbyt długie cytaty'
+        self.tooLongQuotePageMaxLength = 500_000
         self.deadLinksTemplate = 'link-do-sprawdzenia'
         self.lastCheckedPageFile = 'lastpageid.txt'
         self.pathToDatabaseDump = '/public/dumps/public/plwikiquote/latest/plwikiquote-latest-pages-articles.xml.bz2'
@@ -76,20 +77,35 @@ class Swambot:
             time.sleep(10)
         return deadLinks
 
+    def getTooLongQuotesSubpageLink(self):
+        pageId = 1
+        while(len(page := pywikibot.Page(self.site, self.tooLongQuotePage + '/' + str(pageId)).text) > self.tooLongQuotePageMaxLength):
+            pageId+=1
+        return self.tooLongQuotePage + '/' +  str(pageId)
+
     def informAboutTooLongQuote(self, page: pywikibot.xmlreader.XmlEntry, quoteList: list) -> None:
         '''
         Informs about too long quotes on a dedicated page
         '''
-        pageToInform = pywikibot.Page(self.site, self.tooLongQuotePage)
+        if(len(quoteList) == 0): return
+        pageToInform = pywikibot.Page(self.site, self.getTooLongQuotesSubpageLink())
+        if(len(pageToInform.text) == 0):
+            pageToInform.text+= 'Na tej stronie [[Użytkownik:SwamBOT|SwamBOT]] zgłasza zbyt długie cytaty (tj. dłuższe niż 1000 znaków razem ze spacjami). ' \
+        'Przed podjęciem decyzji o usunięciu bądź skróceniu cytatu dobrze jest sprawdzić czy nie doszło do pomyłki i cytat ma faktycznie więcej niż 1000 znaków. ' \
+        'Po skróceniu lub usunięciu cytatu należy usunąć go z tej listy.'
         addedLinks = 0
         for quote in quoteList:
             textToAdd = f"\n* Na stronie [[{page.title}]] znaleziono zbyt długi cytat o długości {len(quote)} znaków: ''{quote}''"
-            if textToAdd in pageToInform.text: continue
+            if quote in pageToInform.text: continue
             textToAdd += ' ~~~~'
             addedLinks += 1
             pageToInform.text += textToAdd
         pageToInform.save('Bot zgłasza zbyt długi cytat' if addedLinks == 1 else 'Bot zgłasza zbyt długie cytaty')
-
+        pageMenu = pywikibot.Page(self.site, self.tooLongQuotePage)
+        if(pageToInform.title() not in pageMenu.text):
+            pageMenu.text += f'\n* [[{pageToInform.title()}]]'
+            pageMenu.save('Dodanie nowej podstrony')
+        
     def getQuoteLength(self, quote: str) -> int:
         '''
         Returns the length of a quote
@@ -129,7 +145,7 @@ class Swambot:
     def mainWorkLoop(self):
         '''
         Main loop of the bot
-        '''
+        '''        
         checked_pages = 0
         lastCheckedId = self.readLastCheckedPage()
         dump = xmlreader.XmlDump(self.pathToDatabaseDump, revisions='latest')
@@ -147,10 +163,8 @@ class Swambot:
                 if(checked_pages >= self.pagesToCheckPerRun):
                     return
         self.saveLastCheckedPage('1')
+        
 
 bot = Swambot()
 bot.mainWorkLoop()
-
-
-
 
